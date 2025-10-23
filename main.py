@@ -1,11 +1,24 @@
 from fastapi import FastAPI, HTTPException, Query
 import hashlib
 from datetime import datetime
+from pydantic import BaseModel
 import re
+from fastapi.middleware.cors import CORSMiddleware
+
+
+
 
 
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],        
+    allow_credentials=False,    
+    allow_methods=["*"],        
+    allow_headers=["*"],       
+)
 
 database ={}
 
@@ -26,25 +39,9 @@ def check_char_frequency(s: str):
         freq[ch] = freq.get(ch, 0) + 1
     return freq
 
-'''
-def unique_characters_count(s:str):
-    unique_char =[]
-    for char in s:
-        if char not in unique_char:
-            unique_char.append(char)
-    return len(unique_char)
 
-def check_char_frequency(s:str):
-    data ={}
-    for char in s:
-        if char in data:
-            data[char] +=1
-        else:
-            data[char] =1 
-
-    return data
-'''
-
+class StringInput(BaseModel):
+    value: str
     
 
 @app.get("/")
@@ -52,8 +49,11 @@ async def root():
     return {"message":"Hello, welcome to string analyzer API!"}
 
 
-@app.post("/strings/", status_code=201)
-async def analyze_string(value:str):
+
+
+@app.post("/strings", status_code=201)
+async def analyze_string(data: StringInput):
+    value = data.value
 
     if not isinstance(value, str):
         raise HTTPException(status_code=422, detail="Invalid data type for value, it must be a string")
@@ -67,8 +67,8 @@ async def analyze_string(value:str):
     length = len(value)
     is_palindrome = palindrome_check(value)
     unique_characters = unique_characters_count(value)
-    hash_object = hashlib.sha256(value.encode('utf-8'))
-    hex_dig = hash_object.hexdigest()
+    hash_value = hashlib.sha256(value.encode('utf-8')).hexdigest()
+
     word_count = count_word(value)
     string_frequency = check_char_frequency(value)
     timestamp = datetime.utcnow().isoformat()
@@ -76,14 +76,14 @@ async def analyze_string(value:str):
     
 
     result = {
-        "id": hex_dig,
+        "id": hash_value,
         "value": value,
         "properties": {
             "length": length,
             "is_palindrome": is_palindrome,
             "unique_characters": unique_characters,
             "word_count": word_count,
-            "sha256_hash": hex_dig,
+            "sha256_hash": hash_value,
             "character_frequency_map":string_frequency
         },
         "created_at": timestamp
@@ -124,7 +124,7 @@ async def get_all_strings(
             
         if contains_character is not None:
             char = contains_character.lower()
-        results = [s for s in results if char in s["value"].lower()]
+            results = [s for s in results if char in s["value"].lower()]
 
 
    
