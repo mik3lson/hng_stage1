@@ -17,6 +17,16 @@ def count_word(s: str) -> int:
     words = s.split()
     return len(words)
 
+def unique_characters_count(s: str) -> int:
+    return len(set(s.lower()))
+
+def check_char_frequency(s: str):
+    freq = {}
+    for ch in s.lower():
+        freq[ch] = freq.get(ch, 0) + 1
+    return freq
+
+'''
 def unique_characters_count(s:str):
     unique_char =[]
     for char in s:
@@ -33,7 +43,7 @@ def check_char_frequency(s:str):
             data[char] =1 
 
     return data
-
+'''
 
     
 
@@ -42,18 +52,17 @@ async def root():
     return {"message":"Hello, welcome to string analyzer API!"}
 
 
-@app.post("/strings/")
+@app.post("/strings/", status_code=201)
 async def analyze_string(value:str):
 
-    if type(value) != str:
-        raise HTTPException(status_code = 422, detail= "Invalid data type for value, it must be a string" )
-    
-    if value == "":
-        raise HTTPException(status_code = 400, detail= "String value cannot be empty" )
-    
+    if not isinstance(value, str):
+        raise HTTPException(status_code=422, detail="Invalid data type for value, it must be a string")
+
+    if value.strip() == "":
+        raise HTTPException(status_code=400, detail="String value cannot be empty")
+
     if value in database:
-        raise HTTPException(status_code = 409, detail= "String value already exists" )
-    
+        raise HTTPException(status_code=409, detail="String value already exists")
     
     length = len(value)
     is_palindrome = palindrome_check(value)
@@ -85,13 +94,7 @@ async def analyze_string(value:str):
     return result
 
 
-@app.get("/strings/{string_value}")
-async def get_string_properties(string_value: str):
-    if string_value in database:
-        return database[string_value]
-    else:
-        raise HTTPException(status_code=404, detail="String value not found")
-    
+
 
 
 @app.get("/strings")
@@ -149,35 +152,49 @@ async def get_all_strings(
 async def filter_by_natural_language(query: str):
     try:
         filters = {}
-        q = query.lower()
+        q = query.lower().strip()
 
-        if "palindromic" in q:
+        # Detect palindrome-related queries
+        if "palindrome" in q or "palindromic" in q:
             filters["is_palindrome"] = True
-        if "single word" in q or "one word" in q:
+
+        # Word count filters
+        if re.search(r"\b(single|one)\b word", q):
             filters["word_count"] = 1
+        elif m := re.search(r"exactly (\d+) words?", q):
+            filters["word_count"] = int(m.group(1))
 
-        m = re.search(r"longer than (\d+)", q)
-        if m:
+        # Length-based filters
+        if m := re.search(r"(?:longer|more) than (\d+)", q):
             filters["min_length"] = int(m.group(1)) + 1
-
-        m = re.search(r"shorter than (\d+)", q)
-        if m:
+        if m := re.search(r"(?:shorter|less) than (\d+)", q):
             filters["max_length"] = int(m.group(1)) - 1
+        if m := re.search(r"(?:length of|length|exactly) (\d+)", q):
+            filters["min_length"] = int(m.group(1))
+            filters["max_length"] = int(m.group(1))
 
-        m = re.search(r"(?:containing|contains|contain)(?: the letter)? ([a-z])", q)
-        if m:
+        # Character-based filters
+        if m := re.search(r"(?:containing|contains|contain)(?: the letter)? ([a-z])", q):
             filters["contains_character"] = m.group(1)
-
-        if "first vowel" in q:
+        elif "first vowel" in q:
             filters["contains_character"] = "a"
 
+        # No recognizable filters
         if not filters:
-            raise HTTPException(status_code=400, detail="Unable to parse natural language query")
+            raise HTTPException(
+                status_code=400,
+                detail="Unable to parse natural language query"
+            )
 
+        # Conflicting filters
         if "min_length" in filters and "max_length" in filters:
             if filters["min_length"] > filters["max_length"]:
-                raise HTTPException(status_code=422, detail="Query parsed but resulted in conflicting filters")
+                raise HTTPException(
+                    status_code=422,
+                    detail="Query parsed but resulted in conflicting filters"
+                )
 
+        # Apply filters to stored strings
         results = list(database.values())
 
         if "is_palindrome" in filters:
@@ -189,9 +206,10 @@ async def filter_by_natural_language(query: str):
         if "max_length" in filters:
             results = [s for s in results if s["properties"]["length"] <= filters["max_length"]]
         if "contains_character" in filters:
-            c = filters["contains_character"]
+            c = filters["contains_character"].lower()
             results = [s for s in results if c in s["value"].lower()]
 
+        # Always return 200 OK — even if no matches
         return {
             "data": results,
             "count": len(results),
@@ -204,10 +222,20 @@ async def filter_by_natural_language(query: str):
     except HTTPException:
         raise
     except Exception:
-        raise HTTPException(status_code=400, detail="Unable to parse natural language query")
+        raise HTTPException(
+            status_code=400,
+            detail="Unable to parse natural language query"
+        )
     
-
-@app.delete("/strings/{string_value}")
+@app.get("/strings/{string_value}")
+async def get_string_properties(string_value: str):
+    if string_value in database:
+        return database[string_value]
+    else:
+        raise HTTPException(status_code=404, detail="String value not found")
+    
+    
+@app.delete("/strings/{string_value}", status_code = 204)
 async def delete_string(string_value: str):
     if string_value in database:
         del database[string_value]
